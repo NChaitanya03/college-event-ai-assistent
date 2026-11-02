@@ -12,6 +12,11 @@ let allEmailsCache = [];
 let nextSyncRemainingSeconds = 1800;
 let autoSyncInterval = null;
 
+// LocalStorage Cache Keys for offline resilience & fast loading on Vercel
+const STORAGE_EVENTS_KEY = 'caias_events_cache';
+const STORAGE_STATUS_KEY = 'caias_app_status';
+const STORAGE_TIMESTAMP_KEY = 'caias_events_timestamp';
+
 // Bookmarks (Saved events) in localStorage
 let savedEventIds = [];
 try {
@@ -20,8 +25,29 @@ try {
   savedEventIds = [];
 }
 
+// Restore cached UI instantly before network requests
+function restoreFromLocalStorage() {
+  try {
+    const cachedStatus = JSON.parse(localStorage.getItem(STORAGE_STATUS_KEY) || 'null');
+    if (cachedStatus) {
+      applyStatusData(cachedStatus);
+    }
+
+    const cachedEvents = JSON.parse(localStorage.getItem(STORAGE_EVENTS_KEY) || 'null');
+    if (Array.isArray(cachedEvents) && cachedEvents.length > 0) {
+      allEventsCache = cachedEvents;
+      const loading = document.getElementById('loadingState');
+      if (loading) loading.classList.add('hidden');
+      renderEventCards(cachedEvents);
+    }
+  } catch (err) {
+    console.warn("Could not load from localStorage:", err);
+  }
+}
+
 // Initialize on DOM load
 document.addEventListener('DOMContentLoaded', () => {
+  restoreFromLocalStorage();
   updateInterestPillStyles();
   updateSavedBadge();
   fetchAppStatus();
@@ -61,20 +87,56 @@ function updateAutoSyncDisplay() {
   display.textContent = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
 }
 
-// Fetch system status and counters
+// Apply status data to header and counter widgets
+function applyStatusData(data) {
+  if (!data) return;
+  if (data.user_email) {
+    const emailElem = document.getElementById('headerUserEmail');
+    if (emailElem) emailElem.textContent = data.user_email;
+  }
+  if (data.last_synced) {
+    const lastSyncElem = document.getElementById('lastSyncedDisplay');
+    if (lastSyncElem) lastSyncElem.textContent = data.last_synced;
+  }
+  if (data.active_events_count !== undefined) {
+    const elem = document.getElementById('statActiveCount');
+    if (elem) elem.textContent = data.active_events_count;
+  }
+  if (data.expired_events_count !== undefined) {
+    const elem = document.getElementById('statExpiredCount');
+    if (elem) elem.textContent = data.expired_events_count;
+    const badge = document.getElementById('tabBadge-expired');
+    if (badge) badge.textContent = data.expired_events_count;
+  }
+  const enrichedElem = document.getElementById('statEnrichedCount');
+  if (enrichedElem) enrichedElem.textContent = data.enriched_calendar_count || 0;
+  
+  const standaloneElem = document.getElementById('statStandaloneCount');
+  if (standaloneElem) standaloneElem.textContent = data.standalone_events_count || 0;
+
+  const liveBadge = document.getElementById('tabBadge-live-updates');
+  if (liveBadge) liveBadge.textContent = data.enriched_calendar_count || 0;
+
+  const nlpBadge = document.getElementById('tabBadge-nlp');
+  if (nlpBadge) nlpBadge.textContent = data.emails_analyzed_count || 0;
+
+  if (data.calendar_count) {
+    const calBadge = document.getElementById('tabBadge-calendar-all');
+    if (calBadge) calBadge.textContent = data.calendar_count;
+  }
+}
+
+// Fetch system status and counters with local storage caching
 async function fetchAppStatus() {
   try {
     const res = await fetch('/api/status');
     const data = await res.json();
+    applyStatusData(data);
     
-    if (data.user_email) {
-      const emailElem = document.getElementById('headerUserEmail');
-      if (emailElem) emailElem.textContent = data.user_email;
-    }
-    if (data.last_synced) {
-      const lastSyncElem = document.getElementById('lastSyncedDisplay');
-      if (lastSyncElem) lastSyncElem.textContent = data.last_synced;
-    }
+    // Cache status in localStorage for instant rendering on reload
+    try {
+      localStorage.setItem(STORAGE_STATUS_KEY, JSON.stringify(data));
+    } catch (e) {}
 
     if (data.next_sync_seconds !== undefined && data.next_sync_seconds > 0) {
       nextSyncRemainingSeconds = data.next_sync_seconds;
@@ -83,38 +145,23 @@ async function fetchAppStatus() {
       // If overdue on page load, trigger background sync
       fetch('/api/cron_sync').catch(() => {});
     }
-
-    // Update Counter Numbers
-    if (data.active_events_count !== undefined) {
-      document.getElementById('statActiveCount').textContent = data.active_events_count;
-    }
-    if (data.expired_events_count !== undefined) {
-      document.getElementById('statExpiredCount').textContent = data.expired_events_count;
-      document.getElementById('tabBadge-expired').textContent = data.expired_events_count;
-    }
-    document.getElementById('statEnrichedCount').textContent = data.enriched_calendar_count || 0;
-    document.getElementById('statStandaloneCount').textContent = data.standalone_events_count || 0;
-
-    // Badges in tabs
-    document.getElementById('tabBadge-live-updates').textContent = data.enriched_calendar_count || 0;
-    document.getElementById('tabBadge-nlp').textContent = data.emails_analyzed_count || 0;
-    if (data.calendar_count) {
-      document.getElementById('tabBadge-calendar-all').textContent = data.calendar_count;
-    }
   } catch (err) {
     console.error("Status fetch error:", err);
   }
 }
 
-// Load events from backend
+// Load events from backend with local storage fallback
 async function loadEvents() {
   const loading = document.getElementById('loadingState');
   const empty = document.getElementById('emptyState');
   const grid = document.getElementById('eventsGrid');
 
-  loading.classList.remove('hidden');
+  // Only show the blocking spinner if we have nothing in cache currently
+  if (!allEventsCache || allEventsCache.length === 0) {
+    loading.classList.remove('hidden');
+    grid.innerHTML = '';
+  }
   empty.classList.add('hidden');
-  grid.innerHTML = '';
 
   const params = new URLSearchParams();
 
@@ -160,11 +207,23 @@ async function loadEvents() {
     allEventsCache = events;
     loading.classList.add('hidden');
 
+    // Save default recommended events to localStorage for instant load next time
+    if (currentTab === 'recommended' && !currentSearchQuery && currentDepartment === 'All' && !currentQuickFilter) {
+      try {
+        localStorage.setItem(STORAGE_EVENTS_KEY, JSON.stringify(events));
+        localStorage.setItem(STORAGE_TIMESTAMP_KEY, Date.now().toString());
+      } catch (e) {
+        console.warn("Storage quota or error:", e);
+      }
+    }
+
     if (currentTab === 'recommended') {
-      document.getElementById('tabBadge-recommended').textContent = events.length;
+      const recBadge = document.getElementById('tabBadge-recommended');
+      if (recBadge) recBadge.textContent = events.length;
     }
 
     if (!events || events.length === 0) {
+      grid.innerHTML = '';
       empty.classList.remove('hidden');
       const titleElem = document.getElementById('emptyStateTitle');
       const descElem = document.getElementById('emptyStateDesc');
@@ -185,11 +244,14 @@ async function loadEvents() {
   } catch (err) {
     loading.classList.add('hidden');
     console.error("Error loading events:", err);
-    empty.classList.remove('hidden');
+    // If we have cached events in memory, keep showing them
+    if (!allEventsCache || allEventsCache.length === 0) {
+      empty.classList.remove('hidden');
+    }
   }
 }
 
-// Render Event Cards Grid
+// Render Event Cards Grid with Clean Filtering and Accurate Verification
 function renderEventCards(events) {
   const grid = document.getElementById('eventsGrid');
   grid.innerHTML = '';
@@ -198,9 +260,9 @@ function renderEventCards(events) {
     const card = document.createElement('div');
     card.className = "glass-card rounded-2xl p-5 flex flex-col justify-between border border-slate-200/90 hover:border-blue-300 transition-all bg-white relative overflow-hidden group";
 
-    const isLiveUpdate = ev.has_email_update;
-    const isStandalone = ev.is_standalone_email;
-    const isExpired = ev.is_expired;
+    const isLiveUpdate = Boolean(ev.has_email_update);
+    const isStandalone = Boolean(ev.is_standalone_email);
+    const isExpired = Boolean(ev.is_expired);
     const matchScore = ev.match_score || 0;
     const isSaved = savedEventIds.includes(ev.id);
 
@@ -221,12 +283,26 @@ function renderEventCards(events) {
     if (matchScore >= 50) scoreColor = "bg-emerald-50 text-emerald-700 border-emerald-200";
     else if (matchScore >= 30) scoreColor = "bg-amber-50 text-amber-700 border-amber-200";
 
-    // Venue badge style
-    const venueText = ev.venue || 'Campus';
-    const isEnrichedVenue = isLiveUpdate && ev.venue && ev.venue !== 'Campus' && ev.venue !== 'N/A';
-    const venueClass = isEnrichedVenue ? 'bg-emerald-100/90 text-emerald-900 font-bold border-emerald-300' : 'bg-slate-100 text-slate-700 border-slate-200';
+    // Clean Venue Formatting (strip stray markdown asterisks, colons, or placeholders)
+    let rawVenue = ev.venue || 'CAIAS Campus';
+    let venueText = rawVenue.replace(/[*_~`]/g, '').replace(/^[:\-\s]+|[:\-\s]+$/g, '').trim();
+    if (!venueText || venueText.toLowerCase() === 'campus / to be announced' || venueText.toLowerCase() === 'tbd' || venueText.toLowerCase() === 'campus') {
+      venueText = 'CAIAS Campus';
+    }
+    if (venueText.toLowerCase().includes('canisius')) {
+      venueText = 'St. Peter Canisius Hall (SG Hall)';
+    }
 
-    // Registration link
+    const isEnrichedVenue = isLiveUpdate && venueText !== 'CAIAS Campus';
+    const venueClass = isEnrichedVenue 
+      ? 'bg-emerald-100/90 text-emerald-900 font-bold border-emerald-300' 
+      : 'bg-slate-100 text-slate-700 border-slate-200';
+
+    // Time Check: Strict validation so no fake or placeholder times are rendered
+    const rawTime = (ev.time || '').replace(/[*_~`]/g, '').trim();
+    const hasValidTime = rawTime && !['tbd', 'refer to announcement', 'n/a', 'to be announced', ''].includes(rawTime.toLowerCase());
+
+    // Registration and Social Links
     const regLink = ev.registration_link || (ev.email_data && ev.email_data.registration_link);
     const whatsappLink = ev.whatsapp_link || (ev.email_data && ev.email_data.whatsapp_link);
 
@@ -287,11 +363,11 @@ function renderEventCards(events) {
             </span>
           </div>
 
-          <!-- Time -->
-          ${ev.time && ev.time !== 'TBD' ? `
+          <!-- Time (Rendered ONLY if verified real time exists) -->
+          ${hasValidTime ? `
             <div class="flex items-center text-slate-600">
               <div class="w-5 text-slate-400"><i class="fa-regular fa-clock"></i></div>
-              <span class="text-[11px] font-medium text-slate-700 bg-white px-2 py-0.5 rounded border border-slate-200">⏰ ${ev.time}</span>
+              <span class="text-[11px] font-medium text-slate-700 bg-white px-2 py-0.5 rounded border border-slate-200">⏰ ${rawTime}</span>
             </div>
           ` : ''}
 
@@ -311,7 +387,7 @@ function renderEventCards(events) {
             </div>
           ` : ''}
 
-          <!-- Event Perks: Fee, Certificate, Attendance, Prizes -->
+          <!-- Event Perks: Fee, Certificate, Attendance, Prizes (Only if verified for this event) -->
           ${(ev.fee || ev.certificate || ev.attendance || ev.prizes) ? `
             <div class="flex items-center flex-wrap gap-1.5 pt-1.5 border-t border-slate-200/60 mt-1">
               ${ev.fee ? `
@@ -469,11 +545,20 @@ function updateSavedBadge() {
 
 // Share Event Details
 function shareEvent(eventId) {
-  const ev = allEventsCache.find(e => e.id === eventId);
+  let ev = allEventsCache.find(e => e.id === eventId);
+  if (!ev) {
+    try {
+      ev = JSON.parse(localStorage.getItem('caias_event_' + eventId));
+    } catch (e) {}
+  }
   if (!ev) return;
 
+  const rawVenue = (ev.venue || 'CAIAS Campus').replace(/[*_~`]/g, '').trim();
+  const rawTime = (ev.time || '').replace(/[*_~`]/g, '').trim();
+  const timeStr = rawTime && !['tbd', 'refer to announcement', 'n/a', ''].includes(rawTime.toLowerCase()) ? rawTime : 'Refer to announcement';
+
   const regLink = ev.registration_link || (ev.email_data && ev.email_data.registration_link) || '';
-  const text = `🎓 *${ev.title}*\n📍 Venue: ${ev.venue || 'Campus'}\n📅 Date: ${ev.start_date}\n⏰ Time: ${ev.time || 'Refer to notice'}\n${regLink ? '📝 Register: ' + regLink + '\n' : ''}Shared from CAIAS AI Event Assistant`;
+  const text = `🎓 *${ev.title}*\n📍 Venue: ${rawVenue}\n📅 Date: ${ev.start_date}\n⏰ Time: ${timeStr}\n${regLink ? '📝 Register: ' + regLink + '\n' : ''}Shared from CAIAS AI Event Assistant`;
 
   if (navigator.share) {
     navigator.share({
@@ -693,18 +778,42 @@ function updateInterestPillStyles() {
   });
 }
 
-// Event Details Modal (With Deep Metadata)
+// Event Details Modal (With Deep Metadata & LocalStorage Caching)
 function openEventModal(eventId) {
-  const ev = allEventsCache.find(e => e.id === eventId);
+  let ev = allEventsCache.find(e => e.id === eventId);
+  if (!ev) {
+    try {
+      ev = JSON.parse(localStorage.getItem('caias_event_' + eventId));
+    } catch (e) {}
+  }
   if (!ev) return;
+
+  // Persist this event to localStorage for offline viewing
+  try {
+    localStorage.setItem('caias_event_' + eventId, JSON.stringify(ev));
+    localStorage.setItem('caias_last_opened_event', JSON.stringify(ev));
+  } catch (e) {}
 
   const modal = document.getElementById('eventModal');
   const content = document.getElementById('modalContent');
 
-  const isLiveUpdate = ev.has_email_update;
-  const isStandalone = ev.is_standalone_email;
-  const isExpired = ev.is_expired;
+  const isLiveUpdate = Boolean(ev.has_email_update);
+  const isStandalone = Boolean(ev.is_standalone_email);
+  const isExpired = Boolean(ev.is_expired);
   const emailData = ev.email_data;
+
+  // Clean Venue and Time
+  let rawVenue = ev.venue || 'CAIAS Campus';
+  let venueText = rawVenue.replace(/[*_~`]/g, '').replace(/^[:\-\s]+|[:\-\s]+$/g, '').trim();
+  if (!venueText || venueText.toLowerCase() === 'campus / to be announced' || venueText.toLowerCase() === 'tbd' || venueText.toLowerCase() === 'campus') {
+    venueText = 'CAIAS Campus';
+  }
+  if (venueText.toLowerCase().includes('canisius')) {
+    venueText = 'St. Peter Canisius Hall (SG Hall)';
+  }
+
+  const rawTime = (ev.time || '').replace(/[*_~`]/g, '').trim();
+  const hasValidTime = rawTime && !['tbd', 'refer to announcement', 'n/a', 'to be announced', ''].includes(rawTime.toLowerCase());
 
   const regLink = ev.registration_link || (emailData && emailData.registration_link);
   const whatsappLink = ev.whatsapp_link || (emailData && emailData.whatsapp_link);
@@ -768,12 +877,12 @@ function openEventModal(eventId) {
       <div>
         <span class="text-slate-400 block font-medium mb-0.5">Venue / Location</span>
         <span class="font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 inline-block">
-          📍 ${ev.venue || 'Campus / TBA'}
+          📍 ${venueText}
         </span>
       </div>
       <div>
         <span class="text-slate-400 block font-medium mb-0.5">Time</span>
-        <span class="font-bold text-slate-800">⏰ ${ev.time || 'Refer to notice'}</span>
+        <span class="font-bold text-slate-800">${hasValidTime ? '⏰ ' + rawTime : 'Refer to announcement'}</span>
       </div>
     </div>
 
@@ -920,7 +1029,8 @@ function closeModal() {
 function getGoogleCalendarUrl(ev) {
   const base = "https://calendar.google.com/calendar/render?action=TEMPLATE";
   const title = encodeURIComponent(ev.title || "CAIAS Event");
-  const venue = encodeURIComponent(ev.venue || "CAIAS Campus");
+  const cleanVenue = (ev.venue || "CAIAS Campus").replace(/[*_~`]/g, '').trim();
+  const venue = encodeURIComponent(cleanVenue);
   
   let startFormatted = (ev.start_date || "").replace(/-/g, '');
   let endFormatted = (ev.end_date || ev.start_date || "").replace(/-/g, '');
@@ -931,8 +1041,11 @@ function getGoogleCalendarUrl(ev) {
     endFormatted = startFormatted;
   }
 
+  const rawTime = (ev.time || '').replace(/[*_~`]/g, '').trim();
+  const timeStr = rawTime && !['tbd', 'refer to announcement', 'n/a', ''].includes(rawTime.toLowerCase()) ? rawTime : 'Refer to announcement';
+
   const datesParam = `${startFormatted}/${endFormatted}`;
-  let details = `Department: ${ev.department || 'CAIAS'}\nVenue: ${ev.venue || 'Campus'}\nTime: ${ev.time || 'TBD'}`;
+  let details = `Department: ${ev.department || 'CAIAS'}\nVenue: ${cleanVenue}\nTime: ${timeStr}`;
   
   const regLink = ev.registration_link || (ev.email_data && ev.email_data.registration_link);
   if (regLink) {

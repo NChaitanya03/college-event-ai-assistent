@@ -74,8 +74,8 @@ def extract_calendar_events(pdf_path=PDF_FILE, force_refresh=False):
                         'title': title,
                         'source_page': page_num,
                         'is_holiday': is_holiday,
-                        'venue': 'Campus' if not is_holiday else 'N/A',
-                        'time': 'TBD',
+                        'venue': 'CAIAS Campus' if not is_holiday else 'N/A',
+                        'time': '',
                         'has_email_update': False,
                         'email_data': None
                     })

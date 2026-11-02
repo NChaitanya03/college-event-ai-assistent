@@ -172,19 +172,36 @@ def extract_times_from_text(text):
     return time_matches
 
 def extract_venues_from_text(text):
-    """Extracts event venues or locations."""
+    """
+    Extracts event venues or locations, cleanly removing markdown asterisks and formatting abbreviations.
+    """
     venues = []
-    explicit_pat = r'(?:Venue|Location|Place)\s*[:\-]\s*([^\n\r•,\.;]+)'
-    for m in re.finditer(explicit_pat, text, re.I):
-        val = m.group(1).strip()
-        if 2 < len(val) < 60:
-            venues.append(val)
 
+    # Clean markdown formatting characters from text before matching
+    clean_text = re.sub(r'[*_#~`]', '', text)
+
+    # Explicit pattern: "Venue: SG. Canisius Hall", "Location: Main Auditorium"
+    # Captures up to newline or time/date markers without breaking on abbreviations like St. or SG.
+    explicit_pat = r'(?:Venue|Location|Place|Held\s+at)\s*[:\-]\s*([^\n\r•|]+?)(?=(?:\s+Time|\s+Date|\s+Day|\s+Timings?|\n|\r|$))'
+    for m in re.finditer(explicit_pat, clean_text, re.I):
+        raw = m.group(1).strip()
+        val = re.sub(r'^[:\-\*\s]+|[,\.;:\*\s]+$', '', raw)
+        if val and val.lower() not in {'tba', 'tbd', 'refer to announcement', 'campus', 'caias', 'offline', 'online'}:
+            if 3 <= len(val) <= 60:
+                if 'canisius' in val.lower():
+                    val = "St. Peter Canisius Hall (SG Hall)"
+                if not any(val.lower() == v.lower() for v in venues):
+                    venues.append(val)
+
+    # Known campus venues
     for pat in COMMON_VENUES:
-        m = re.search(r'\b(' + pat + r')\b', text, re.I)
+        m = re.search(r'\b(' + pat + r')\b', clean_text, re.I)
         if m:
             v = m.group(1).strip()
-            if not any(v.lower() in existing.lower() for existing in venues):
+            v = re.sub(r'^[:\-\*\s]+|[,\.;:\*\s]+$', '', v)
+            if v and len(v) >= 3 and not any(v.lower() in existing.lower() for existing in venues):
+                if 'canisius' in v.lower():
+                    v = "St. Peter Canisius Hall (SG Hall)"
                 venues.append(v)
 
     return venues
@@ -525,17 +542,37 @@ def analyze_email_for_event(email_item):
 
 def match_and_augment_events(calendar_events, analyzed_emails):
     """
-    Correlates analyzed email events with the Academic Calendar events.
-    Enriches calendar events with live email venue/time, and adds standalone email events.
-    Applies expiration calculation to all events.
+    Correlates analyzed email events with the Academic Calendar events with HIGH PRECISION.
+    Only attaches email details if there is an exact named match or high-confidence specific keyword match.
+    Enforces 1-to-1 matching: one email notice can never be attached to multiple unrelated calendar events.
     """
     augmented_calendar = []
     matched_email_ids = set()
 
+    GENERIC_WORDS = {
+        'general', 'staff', 'meeting', 'club', 'activity', 'department', 'program',
+        'programme', 'workshop', 'seminar', 'webinar', 'conference', 'session', 'series',
+        'lecture', 'guest', 'interaction', 'orientation', 'celebration', 'annual',
+        'national', 'international', 'fep', 'fdp', 'hod', 'hods', 'faculty', 'academic',
+        'student', 'students', 'studies', 'management', 'commerce', 'science', 'computer',
+        'applications', 'caias', 'christ', 'academy', 'campus', 'education', 'learning',
+        'growth', 'development', 'talk', 'event', 'events', 'notice', 'for', 'the', 'and',
+        'with', 'from', 'in', 'on', 'at', 'to', 'of', 'a', 'an', 'india', 'state', 'states',
+        'indian', 'college', 'session', 'sessions', 'action', 'required', 'phase', 'level',
+        'activities', 'invitation', 'registered', 'participants', 'announcement', 'details',
+        'important', 'regarding', 'dear', 'team', 'club', 'association', 'schedule', 'edition',
+        'today', 'tomorrow', 'yesterday', 'post', 'posted', 'recently', 'view'
+    }
+
+    KNOWN_NAMED_KEYWORDS = [
+        'udyama', 'sangamotsava', 'sangamotsav', 'sangam cup', 'technovanza',
+        'biz quest', 'hackfront', 'scientia', 'cognopolis', 'inventure',
+        'kannada rajyotsava', 'book exhibition', 'rangotsav', 'battle for the cup'
+    ]
+
     for cal_ev in calendar_events:
         item = dict(cal_ev)
         cal_title = item.get('title', '').lower()
-        cal_dept = item.get('department', '').lower()
         cal_date = item.get('start_date', '')
 
         # Calculate expiration for calendar event
@@ -544,7 +581,14 @@ def match_and_augment_events(calendar_events, analyzed_emails):
         item['status'] = exp_info['status']
         item['countdown_text'] = exp_info['countdown_text']
 
-        # Search for matching emails
+        # Clean defaults: If we don't have verified email data for this event, do NOT show fake data
+        item['has_email_update'] = False
+        item['time'] = ''  # Empty so no fake 9 AM or TBD badge is rendered
+        item['email_data'] = None
+
+        # Distinctive specific keywords from calendar title (set deduplicated)
+        cal_specific_words = set(re.findall(r'\b[a-z]{4,}\b', cal_title)) - GENERIC_WORDS
+
         best_match = None
         best_score = 0
 
@@ -552,29 +596,62 @@ def match_and_augment_events(calendar_events, analyzed_emails):
             if not em.get('is_event'):
                 continue
 
-            em_text = f"{em.get('email_subject', '')} {em.get('highlight_title', '')} {em.get('snippet', '')}".lower()
-            keyword_score = 0
-            cal_words = [w for w in re.findall(r'[a-z]{4,}', cal_title) if w not in {'general', 'staff', 'meeting', 'club', 'activity'}]
-            
-            if cal_words:
-                matched_words = [w for w in cal_words if w in em_text]
-                if matched_words:
-                    keyword_score += len(matched_words) * 3
+            # 1-to-1 matching constraint: never match an already claimed email!
+            if em.get('raw_email_id') in matched_email_ids:
+                continue
 
-            if cal_dept in em_text or (cal_dept == 'commerce' and 'commerce' in em_text) or (cal_dept == 'management' and 'management' in em_text):
-                keyword_score += 2
+            em_subj = em.get('email_subject', '').lower()
+            em_highlight = em.get('highlight_title', '').lower()
+            em_specific_words = set(re.findall(r'\b[a-z]{4,}\b', f"{em_subj} {em_highlight}")) - GENERIC_WORDS
+            common_words = cal_specific_words & em_specific_words
 
-            if em.get('primary_date') == cal_date:
-                keyword_score += 5
+            match_score = 0
 
-            if keyword_score > best_score and keyword_score >= 4:
-                best_score = keyword_score
+            # 1. Exact Named Match (e.g. 'UDYAMA Trade Fair' <-> 'Udyama 2026')
+            for kw in KNOWN_NAMED_KEYWORDS:
+                if kw in cal_title and (kw in em_subj or kw in em_highlight):
+                    match_score += 25
+
+            # Calculate date proximity
+            date_diff_days = None
+            if cal_date and em.get('primary_date'):
+                try:
+                    d1 = datetime.fromisoformat(cal_date)
+                    d2 = datetime.fromisoformat(em.get('primary_date'))
+                    date_diff_days = abs((d1 - d2).days)
+                except Exception:
+                    pass
+
+            # 2. Distinctive Multi-word Match
+            if len(common_words) >= 2:
+                if date_diff_days is not None and date_diff_days <= 7:
+                    match_score += len(common_words) * 6 + 10
+                elif date_diff_days is not None and date_diff_days <= 14:
+                    match_score += len(common_words) * 6 + 5
+                elif date_diff_days is not None and date_diff_days > 35:
+                    # Distant months - only match if 4+ specific words match
+                    if len(common_words) >= 4:
+                        match_score += 15
+                else:
+                    if len(common_words) >= 3:
+                        match_score += len(common_words) * 6
+            elif len(common_words) == 1:
+                single_w = list(common_words)[0]
+                if single_w in {'cognopolis', 'scientia', 'inventure', 'hackfront'}:
+                    match_score += 18
+
+            if match_score > best_score and match_score >= 15:
+                best_score = match_score
                 best_match = em
 
         if best_match:
             item['has_email_update'] = True
-            item['venue'] = best_match['venue'] if best_match['venue'] != 'Campus / To Be Announced' else item.get('venue', 'Campus')
-            item['time'] = best_match['time'] if best_match['time'] != 'Refer to announcement' else item.get('time', 'TBD')
+            if best_match.get('venue') and best_match['venue'] != 'Campus / To Be Announced':
+                item['venue'] = best_match['venue']
+            else:
+                item['venue'] = item.get('venue', 'CAIAS Campus')
+
+            item['time'] = best_match['time'] if (best_match.get('time') and best_match['time'] != 'Refer to announcement') else ''
             item['registration_link'] = best_match.get('registration_link')
             item['whatsapp_link'] = best_match.get('whatsapp_link')
             item['deadline'] = best_match.get('deadline')
@@ -609,6 +686,7 @@ def match_and_augment_events(calendar_events, analyzed_emails):
                 'mode': best_match.get('mode'),
                 'links': best_match.get('all_links', best_match.get('links', []))
             }
+            # Reserve this email so it CANNOT be attached to any other event
             matched_email_ids.add(best_match['raw_email_id'])
 
         augmented_calendar.append(item)
