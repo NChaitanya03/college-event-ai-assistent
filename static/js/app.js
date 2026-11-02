@@ -79,6 +79,9 @@ async function fetchAppStatus() {
     if (data.next_sync_seconds !== undefined && data.next_sync_seconds > 0) {
       nextSyncRemainingSeconds = data.next_sync_seconds;
       updateAutoSyncDisplay();
+    } else {
+      // If overdue on page load, trigger background sync
+      fetch('/api/cron_sync').catch(() => {});
     }
 
     // Update Counter Numbers

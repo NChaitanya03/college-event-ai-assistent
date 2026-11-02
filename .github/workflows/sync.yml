@@ -1,0 +1,19 @@
+name: 30-Minute Event Auto-Sync
+
+on:
+  schedule:
+    # Runs every 30 minutes for free via GitHub Actions
+    - cron: '*/30 * * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Vercel Sync Endpoint
+        run: |
+          # Replace with your actual Vercel project domain once deployed
+          APP_URL="${{ secrets.VERCEL_APP_URL || 'https://college-event-ai-assistent.vercel.app' }}"
+          echo "Triggering sync at: ${APP_URL}/api/cron_sync"
+          curl -s -f -X GET "${APP_URL}/api/cron_sync" || echo "Note: Check if VERCEL_APP_URL is configured."
+
