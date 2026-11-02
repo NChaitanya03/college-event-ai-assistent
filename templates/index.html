@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Event Assistant | Christ Academy (CAIAS)</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#F0F4F8',
+              100: '#D9E2EC',
+              500: '#2563EB',
+              600: '#1D4ED8',
+              700: '#1E40AF',
+              800: '#1C315E',
+              900: '#0B132B'
+            },
+            accent: {
+              gold: '#F59E0B',
+              amber: '#D97706',
+              emerald: '#10B981',
+              rose: '#E11D48'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Font Awesome 6 Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  
+  <!-- Custom Styles -->
+  <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased min-h-screen flex flex-col">
+
+  <!-- TOP NAVIGATION BAR -->
+  <header class="sticky top-0 z-40 bg-brand-900 text-white shadow-md border-b border-slate-700/50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16">
+        
+        <!-- Logo & Branding -->
+        <div class="flex items-center space-x-3">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 via-orange-500 to-blue-600 flex items-center justify-center shadow-lg text-white font-bold text-xl">
+            <i class="fa-solid fa-graduation-cap"></i>
+          </div>
+          <div>
+            <div class="flex items-center space-x-2">
+              <span class="font-extrabold tracking-tight text-lg text-white font-heading">CAIAS</span>
+              <span class="text-xs px-2 py-0.5 rounded-full bg-blue-500/30 text-blue-200 border border-blue-400/30 font-semibold">AI Event Assistant</span>
+            </div>
+            <p class="text-xs text-slate-300">Christ Academy Institute for Advanced Studies</p>
+          </div>
+        </div>
+
+        <!-- Sync & Status Control -->
+        <div class="flex items-center space-x-2.5 sm:space-x-3">
+          
+          <!-- Auto-Sync Live Status Pill -->
+          <div class="flex items-center bg-emerald-950/60 border border-emerald-500/30 px-2.5 py-1.5 rounded-lg text-xs space-x-2 text-emerald-300">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 pulse-badge"></span>
+            <span class="hidden md:inline font-medium">Auto-Sync:</span>
+            <span id="autoSyncDisplay" class="font-bold text-emerald-200">29:50</span>
+          </div>
+
+          <!-- Live User Pill -->
+          <div class="hidden sm:flex items-center bg-slate-800/80 border border-slate-700 px-3 py-1.5 rounded-lg text-xs space-x-2">
+            <i class="fa-regular fa-user text-slate-400"></i>
+            <span class="text-slate-300 font-medium" id="headerUserEmail">{{ user_profile.email or 'Connected' }}</span>
+          </div>
+
+          <!-- Manual Sync Button -->
+          <button id="syncBtn" onclick="triggerEmailSync()" title="Refresh tokens & check new emails" class="inline-flex items-center space-x-1.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white text-xs font-semibold px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-lg shadow transition active:scale-95 border border-blue-500/40">
+            <i id="syncIcon" class="fa-solid fa-rotate"></i>
+            <span id="syncText" class="hidden xs:inline">Sync Now</span>
+          </button>
+
+        </div>
+
+      </div>
+    </div>
+  </header>
+
+  <!-- HERO SECTION WITH STATS -->
+  <section class="bg-gradient-to-b from-brand-900 via-brand-800 to-slate-900 text-white pt-8 pb-10 px-4 sm:px-6 lg:px-8 border-b border-slate-800">
+    <div class="max-w-7xl mx-auto">
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+        
+        <div>
+          <div class="flex items-center space-x-2 mb-1.5">
+            <span class="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center space-x-1">
+              <i class="fa-solid fa-sparkles text-[10px]"></i>
+              <span>Live Campus AI Assistant</span>
+            </span>
+            <span class="text-slate-500">•</span>
+            <span class="text-xs text-slate-300">Auto-syncing every 30m with Gmail API</span>
+          </div>
+          <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight font-heading">
+            Active Campus Events & Live Notice Feed
+          </h1>
+          <p class="mt-1 text-slate-300 text-xs sm:text-sm max-w-2xl">
+            Cleanly segregates upcoming events from past ones, auto-extracts live venues, timings, registration forms, WhatsApp groups, and food stalls from your Gmail.
+          </p>
+        </div>
+
+        <!-- Sync Timestamp Box -->
+        <div class="bg-white/10 backdrop-blur-md border border-white/15 rounded-xl p-3 text-xs flex items-center space-x-3 self-start md:self-auto">
+          <div class="w-8 h-8 rounded-lg bg-blue-500/30 flex items-center justify-center text-blue-300">
+            <i class="fa-regular fa-clock"></i>
+          </div>
+          <div>
+            <div class="text-slate-300 text-[11px]">Last Sync Check</div>
+            <div class="font-semibold text-white" id="lastSyncedDisplay">{{ last_synced }}</div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Quick Metrics Grid -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mt-7">
+        
+        <div class="bg-white/10 backdrop-blur-md border border-white/10 rounded-2xl p-3.5 sm:p-4 flex items-center space-x-3">
+          <div class="w-11 h-11 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center text-lg sm:text-xl">
+            <i class="fa-solid fa-calendar-check"></i>
+          </div>
+          <div>
+            <div class="text-xl sm:text-2xl font-bold text-white" id="statActiveCount">{{ active_count }}</div>
+            <div class="text-[11px] sm:text-xs text-slate-300 font-medium">Active Upcoming Events</div>
+          </div>
+        </div>
+
+        <div class="bg-white/10 backdrop-blur-md border border-white/10 rounded-2xl p-3.5 sm:p-4 flex items-center space-x-3">
+          <div class="w-11 h-11 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-lg sm:text-xl">
+            <i class="fa-solid fa-bolt"></i>
+          </div>
+          <div>
+            <div class="text-xl sm:text-2xl font-bold text-white" id="statEnrichedCount">--</div>
+            <div class="text-[11px] sm:text-xs text-slate-300 font-medium">Live Email Enriched</div>
+          </div>
+        </div>
+
+        <div class="bg-white/10 backdrop-blur-md border border-white/10 rounded-2xl p-3.5 sm:p-4 flex items-center space-x-3">
+          <div class="w-11 h-11 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center text-lg sm:text-xl">
+            <i class="fa-solid fa-bullhorn"></i>
+          </div>
+          <div>
+            <div class="text-xl sm:text-2xl font-bold text-white" id="statStandaloneCount">--</div>
+            <div class="text-[11px] sm:text-xs text-slate-300 font-medium">New Email Announcements</div>
+          </div>
+        </div>
+
+        <div class="bg-white/10 backdrop-blur-md border border-white/10 rounded-2xl p-3.5 sm:p-4 flex items-center space-x-3">
+          <div class="w-11 h-11 rounded-xl bg-slate-500/20 text-slate-400 flex items-center justify-center text-lg sm:text-xl">
+            <i class="fa-solid fa-box-archive"></i>
+          </div>
+          <div>
+            <div class="text-xl sm:text-2xl font-bold text-white" id="statExpiredCount">{{ expired_count }}</div>
+            <div class="text-[11px] sm:text-xs text-slate-300 font-medium">Past Events (Archive)</div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </section>
+
+  <!-- MAIN CONTENT CONTAINER -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-7 flex-1 w-full">
+
+    <!-- TAB NAVIGATION BAR -->
+    <div class="border-b border-slate-200 mb-6">
+      <nav class="flex space-x-3 sm:space-x-6 overflow-x-auto pb-1" aria-label="Tabs">
+        
+        <!-- Tab 1: Personalized -->
+        <button onclick="switchTab('recommended')" id="tabBtn-recommended" class="tab-btn active-tab border-b-2 border-blue-600 pb-3 px-1 text-sm font-semibold text-blue-600 flex items-center space-x-2 whitespace-nowrap">
+          <i class="fa-solid fa-wand-magic-sparkles text-blue-500"></i>
+          <span>Personalized For You</span>
+          <span id="tabBadge-recommended" class="ml-1 py-0.5 px-2 rounded-full text-[10px] bg-blue-100 text-blue-700 font-bold">--</span>
+        </button>
+
+        <!-- Tab 2: Live Email Notices -->
+        <button onclick="switchTab('live-updates')" id="tabBtn-live-updates" class="tab-btn border-b-2 border-transparent pb-3 px-1 text-sm font-semibold text-slate-500 hover:text-slate-700 flex items-center space-x-2 whitespace-nowrap">
+          <i class="fa-solid fa-bolt text-amber-500"></i>
+          <span>Live Email Updates</span>
+          <span id="tabBadge-live-updates" class="ml-1 py-0.5 px-2 rounded-full text-[10px] bg-amber-100 text-amber-800 font-bold">--</span>
+        </button>
+
+        <!-- Tab 3: COE Academic Calendar -->
+        <button onclick="switchTab('calendar-all')" id="tabBtn-calendar-all" class="tab-btn border-b-2 border-transparent pb-3 px-1 text-sm font-semibold text-slate-500 hover:text-slate-700 flex items-center space-x-2 whitespace-nowrap">
+          <i class="fa-solid fa-calendar-day text-slate-500"></i>
+          <span>Academic Calendar (Active)</span>
+          <span id="tabBadge-calendar-all" class="ml-1 py-0.5 px-2 rounded-full text-[10px] bg-slate-100 text-slate-700 font-bold">--</span>
+        </button>
+
+        <!-- Tab 4: Expired / Past Archive (NEW) -->
+        <button onclick="switchTab('expired-events')" id="tabBtn-expired-events" class="tab-btn border-b-2 border-transparent pb-3 px-1 text-sm font-semibold text-slate-500 hover:text-slate-700 flex items-center space-x-2 whitespace-nowrap">
+          <i class="fa-solid fa-flag-checkered text-rose-500"></i>
+          <span>Completed / Past Events</span>
+          <span id="tabBadge-expired" class="ml-1 py-0.5 px-2 rounded-full text-[10px] bg-rose-100 text-rose-800 font-bold">{{ expired_count }}</span>
+        </button>
+
+        <!-- Tab 5: NLP Inspector -->
+        <button onclick="switchTab('nlp-inspector')" id="tabBtn-nlp-inspector" class="tab-btn border-b-2 border-transparent pb-3 px-1 text-sm font-semibold text-slate-500 hover:text-slate-700 flex items-center space-x-2 whitespace-nowrap">
+          <i class="fa-solid fa-microchip text-indigo-500"></i>
+          <span>NLP Email Inspector</span>
+          <span id="tabBadge-nlp" class="ml-1 py-0.5 px-2 rounded-full text-[10px] bg-purple-100 text-purple-700 font-bold">--</span>
+        </button>
+
+      </nav>
+    </div>
+
+    <!-- QUICK CONVENIENCE FILTER CHIPS (Happening Today, This Week, Forms, Saved) -->
+    <div id="quickFilterPills" class="flex items-center space-x-2 overflow-x-auto pb-3 mb-4 text-xs">
+      <span class="text-slate-400 font-bold uppercase tracking-wider text-[10px] shrink-0">Quick View:</span>
+      <button onclick="setQuickFilter('')" id="qf-all" class="qf-btn px-3 py-1.5 rounded-full bg-blue-600 text-white font-semibold shadow-sm transition shrink-0">
+        All Active
+      </button>
+      <button onclick="setQuickFilter('today')" id="qf-today" class="qf-btn px-3 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium transition shrink-0 flex items-center space-x-1.5">
+        <span>🔥 Happening Today</span>
+      </button>
+      <button onclick="setQuickFilter('this_week')" id="qf-this_week" class="qf-btn px-3 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium transition shrink-0 flex items-center space-x-1.5">
+        <span>⚡ This Week</span>
+      </button>
+      <button onclick="setQuickFilter('registration')" id="qf-registration" class="qf-btn px-3 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium transition shrink-0 flex items-center space-x-1.5">
+        <span>📝 Has Registration Form</span>
+      </button>
+      <button onclick="setQuickFilter('standalone')" id="qf-standalone" class="qf-btn px-3 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium transition shrink-0 flex items-center space-x-1.5">
+        <span>📢 New Email Notices</span>
+      </button>
+      <button onclick="setQuickFilter('saved')" id="qf-saved" class="qf-btn px-3 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium transition shrink-0 flex items-center space-x-1.5">
+        <span>⭐ Saved Bookmarks (<span id="savedCountBadge">0</span>)</span>
+      </button>
+    </div>
+
+    <!-- FILTER & SEARCH CONTROL BAR -->
+    <div id="filterControls" class="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200/80 mb-6">
+      
+      <!-- Row 1: Search & Dropdowns -->
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+        
+        <!-- Search Input -->
+        <div class="md:col-span-7 relative">
+          <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+            <i class="fa-solid fa-magnifying-glass text-sm"></i>
+          </div>
+          <input type="text" id="searchInput" oninput="debounceSearch()" placeholder="Search active events by title, department, stall, or venue (e.g. Udyama, Hackathon)..." class="w-full pl-10 pr-4 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition">
+        </div>
+
+        <!-- Department Filter -->
+        <div class="md:col-span-5">
+          <select id="departmentSelect" onchange="applyFilters()" class="w-full py-2 px-3 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition">
+            <option value="All">All Departments / Clubs</option>
+            {% for d in departments %}
+            <option value="{{ d }}">{{ d }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+      </div>
+
+      <!-- Row 2: Student Interests Chips -->
+      <div id="interestsSection" class="mt-4 pt-4 border-t border-slate-100">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center space-x-1.5">
+            <i class="fa-solid fa-tag text-[10px]"></i>
+            <span>Select Your Interests for Personalized Ranking:</span>
+          </span>
+          <button onclick="resetInterests()" class="text-xs text-blue-600 hover:underline font-medium">Select Defaults</button>
+        </div>
+        
+        <div class="flex flex-wrap gap-1.5 sm:gap-2" id="interestPills">
+          {% for interest in interest_options %}
+          <button type="button" onclick="toggleInterest('{{ interest }}')" data-interest="{{ interest }}" class="interest-pill text-xs px-2.5 py-1 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-medium transition cursor-pointer">
+            {{ interest }}
+          </button>
+          {% endfor %}
+        </div>
+      </div>
+
+    </div>
+
+    <!-- EVENT CARDS CONTAINER -->
+    <div id="eventsSection">
+      
+      <!-- Loading indicator -->
+      <div id="loadingState" class="hidden py-16 text-center">
+        <div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-blue-100 text-blue-600 mb-3 animate-spin">
+          <i class="fa-solid fa-spinner text-xl"></i>
+        </div>
+        <h3 class="text-base font-semibold text-slate-800">Processing Events & Live Notices...</h3>
+        <p class="text-xs text-slate-500 mt-1">Filtering expired records and calculating AI rankings</p>
+      </div>
+
+      <!-- Empty state -->
+      <div id="emptyState" class="hidden py-16 text-center bg-white rounded-2xl border border-dashed border-slate-200">
+        <div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-slate-100 text-slate-400 mb-3">
+          <i class="fa-regular fa-calendar-xmark text-xl"></i>
+        </div>
+        <h3 class="text-base font-semibold text-slate-800" id="emptyStateTitle">No events matched your criteria</h3>
+        <p class="text-xs text-slate-500 mt-1" id="emptyStateDesc">Try clearing the search query or switching tabs.</p>
+        <button onclick="resetFilters()" class="mt-4 px-4 py-2 bg-blue-50 text-blue-600 text-xs font-semibold rounded-lg hover:bg-blue-100 transition">
+          Reset All Filters
+        </button>
+      </div>
+
+      <!-- Grid of Event Cards -->
+      <div id="eventsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <!-- Event cards dynamically rendered here via app.js -->
+      </div>
+
+    </div>
+
+    <!-- NLP EMAIL INSPECTOR SECTION (Tab 5) -->
+    <div id="nlpInspectorSection" class="hidden">
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-6">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h2 class="text-lg font-bold text-slate-900 font-heading">Recent Inbox Emails & NLP Entity Extraction</h2>
+            <p class="text-xs text-slate-500">Live inspection of how the NLP engine extracts venues, registration links, WhatsApp groups, deadlines, and stalls.</p>
+          </div>
+          <button onclick="triggerEmailSync()" class="text-xs font-semibold px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 border border-blue-200 flex items-center space-x-1.5">
+            <i class="fa-solid fa-arrows-rotate"></i>
+            <span>Refresh Inbox</span>
+          </button>
+        </div>
+
+        <div id="nlpEmailList" class="space-y-4">
+          <!-- Dynamic emails with NLP badges -->
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- EVENT DETAIL MODAL (WITH RICH METADATA) -->
+  <div id="eventModal" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-2xl w-full max-h-[90vh] overflow-y-auto transform transition-all p-6 relative">
+      
+      <!-- Close button -->
+      <button onclick="closeModal()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition">
+        <i class="fa-solid fa-xmark text-sm"></i>
+      </button>
+
+      <div id="modalContent">
+        <!-- Populated dynamically via openEventModal() -->
+      </div>
+
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION -->
+  <div id="toastNotification" class="fixed bottom-5 right-5 z-50 hidden bg-slate-900 text-white px-4 py-2.5 rounded-xl shadow-xl border border-slate-700 text-xs flex items-center space-x-2 transition-all">
+    <i class="fa-solid fa-circle-check text-emerald-400"></i>
+    <span id="toastMessage">Action completed</span>
+  </div>
+
+  <!-- FOOTER -->
+  <footer class="bg-white border-t border-slate-200 py-6 mt-auto">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-3">
+      <div class="flex items-center space-x-2">
+        <span class="font-bold text-slate-700">CAIAS AI Event Assistant</span>
+        <span>•</span>
+        <span>Christ Academy Institute for Advanced Studies</span>
+      </div>
+      <div>
+        <span>Academic Calendar 2026–2027 • Auto-syncing with Gmail API every 30m</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Client-side Application Script -->
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
