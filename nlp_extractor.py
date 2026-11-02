@@ -281,14 +281,51 @@ def extract_rich_metadata_from_text(text):
             metadata['eligibility'] = f"Students of {', '.join(courses_found)}"
 
     # 5. Fee Info
-    if re.search(r'\bfree\s+(?:entry|registration|of\s+cost)\b', text, re.I):
-        metadata['fee'] = "Free"
+    if re.search(r'\b(?:free\s+(?:entry|registration|of\s+cost)|no\s+(?:registration\s+)?fee|registration\s+free)\b', text, re.I):
+        metadata['fee'] = "Free Entry"
     else:
         fee_m = re.search(r'(?:Registration\s+Fee|Entry\s+Fee|Fee)\s*[:\-]?\s*(?:Rs\.?|INR|₹)?\s*(\d+)', text, re.I)
         if fee_m:
             metadata['fee'] = f"₹{fee_m.group(1)}"
+        elif re.search(r'\b(?:free)\b', text, re.I) and any(w in text.lower() for w in ['entry', 'workshop', 'webinar', 'seminar', 'attend']):
+            metadata['fee'] = "Free Entry"
 
-    # 6. Stalls & Highlights (e.g. Udyama stall numbers, special features)
+    # 6. Certificate Provided Info
+    cert_pat = r'(?:e-?\s*certificates?|certificates?)\s*(?:of\s+participation)?\s*(?:will\s+be\s+provided|provided|issued|awarded|given|for\s+all\s+participants?|to\s+all)'
+    if re.search(cert_pat, text, re.I) or re.search(r'\b(?:participation\s+certificate|e-certificate\s+will\s+be\s+given)\b', text, re.I):
+        metadata['certificate'] = "Certificate Provided"
+    elif re.search(r'\b(?:e-?certificates?|certificates?)\b', text, re.I) and any(w in text.lower() for w in ['all participants', 'registered participants', 'attendees']):
+        metadata['certificate'] = "Certificate Provided"
+    elif re.search(r'\b(?:merit\s+certificates?|winner\s+certificates?)\b', text, re.I):
+        metadata['certificate'] = "Merit Certificate"
+    else:
+        metadata['certificate'] = None
+
+    # 7. Attendance / Duty Leave Credited
+    if re.search(r'\b(?:attendance|duty\s*leave)\s*(?:will\s+be\s+provided|provided|marked|credited|given)\b', text, re.I):
+        metadata['attendance'] = "Attendance Provided"
+    else:
+        metadata['attendance'] = None
+
+    # 8. Prizes / Cash Rewards / Trophies / Cups
+    if re.search(r'\b(?:sangam\s*cup|the\s*battle\s*for\s*the\s*cup|cup\b|championship\s*trophy)\b', text, re.I):
+        metadata['prizes'] = "Sangam Cup & Trophies"
+    elif re.search(r'\b(?:prizes?\s*and\s*recognition|cash\s*prizes?|top\s*\d+\s*winners?|prizes?\s*worth|awards?|trophies|medals|goodies|what\s+you\s+can\s+win)\b', text, re.I):
+        prize_m = re.search(r'(?:cash\s*prizes?|prizes?\s*worth|awards?)\s*[:\-]?\s*(?:Rs\.?|INR|₹)?\s*([0-9,]+)', text, re.I)
+        if prize_m:
+            metadata['prizes'] = f"Cash Prizes: ₹{prize_m.group(1)}"
+        else:
+            metadata['prizes'] = "Prizes & Recognition"
+    else:
+        metadata['prizes'] = None
+
+    # 9. Mode (Offline / Online)
+    if any(m in text.lower() for m in ['google meet', 'zoom.us', 'meet.google.com', 'online webinar', 'virtual session', 'teams meeting']):
+        metadata['mode'] = "Online / Virtual"
+    else:
+        metadata['mode'] = "On-Campus (Offline)"
+
+    # 10. Stalls & Highlights (e.g. Udyama stall numbers, special features)
     stall_m = re.search(r'(?:Stall\s*(?:No\.?\s*)?\d+[^\n\r•]*)', text, re.I)
     if stall_m:
         metadata['stall_info'] = stall_m.group(0).strip()
@@ -472,6 +509,10 @@ def analyze_email_for_event(email_item):
         'coordinators': meta['coordinators'],
         'eligibility': meta['eligibility'],
         'fee': meta['fee'],
+        'certificate': meta['certificate'],
+        'attendance': meta['attendance'],
+        'prizes': meta['prizes'],
+        'mode': meta['mode'],
         'highlights': meta['highlights'],
         'stall_info': meta['stall_info'],
         'organizer': sender,
@@ -541,6 +582,11 @@ def match_and_augment_events(calendar_events, analyzed_emails):
             item['contact_numbers'] = best_match.get('contact_numbers')
             item['highlights'] = best_match.get('highlights')
             item['stall_info'] = best_match.get('stall_info')
+            item['certificate'] = best_match.get('certificate')
+            item['fee'] = best_match.get('fee')
+            item['attendance'] = best_match.get('attendance')
+            item['prizes'] = best_match.get('prizes')
+            item['mode'] = best_match.get('mode')
             item['live_update_notes'] = f"Updated via recent email: {best_match['email_subject']}"
             item['email_data'] = {
                 'subject': best_match['email_subject'],
@@ -556,6 +602,11 @@ def match_and_augment_events(calendar_events, analyzed_emails):
                 'contact_numbers': best_match.get('contact_numbers'),
                 'highlights': best_match.get('highlights', []),
                 'stall_info': best_match.get('stall_info'),
+                'certificate': best_match.get('certificate'),
+                'fee': best_match.get('fee'),
+                'attendance': best_match.get('attendance'),
+                'prizes': best_match.get('prizes'),
+                'mode': best_match.get('mode'),
                 'links': best_match.get('all_links', best_match.get('links', []))
             }
             matched_email_ids.add(best_match['raw_email_id'])
@@ -592,6 +643,10 @@ def match_and_augment_events(calendar_events, analyzed_emails):
                 'highlights': em.get('highlights'),
                 'stall_info': em.get('stall_info'),
                 'fee': em.get('fee'),
+                'certificate': em.get('certificate'),
+                'attendance': em.get('attendance'),
+                'prizes': em.get('prizes'),
+                'mode': em.get('mode'),
                 'has_email_update': True,
                 'email_data': {
                     'subject': em.get('email_subject'),
@@ -607,7 +662,12 @@ def match_and_augment_events(calendar_events, analyzed_emails):
                     'contact_numbers': em.get('contact_numbers'),
                     'highlights': em.get('highlights'),
                     'stall_info': em.get('stall_info'),
-                    'links': em.get('all_links')
+                    'fee': em.get('fee'),
+                    'certificate': em.get('certificate'),
+                    'attendance': em.get('attendance'),
+                    'prizes': em.get('prizes'),
+                    'mode': em.get('mode'),
+                    'links': em.get('all_links', [])
                 }
             })
 

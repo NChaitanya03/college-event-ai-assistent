@@ -225,6 +225,10 @@ def get_events(
         filtered = [e for e in filtered if e.get("registration_link") or (e.get("email_data") and e["email_data"].get("registration_link"))]
     elif quick_filter == "standalone":
         filtered = [e for e in filtered if e.get("is_standalone_email")]
+    elif quick_filter == "certificate":
+        filtered = [e for e in filtered if e.get("certificate") or (e.get("email_data") and e["email_data"].get("certificate"))]
+    elif quick_filter == "free":
+        filtered = [e for e in filtered if (e.get("fee") and "free" in str(e.get("fee")).lower()) or (e.get("email_data") and e["email_data"].get("fee") and "free" in str(e["email_data"].get("fee")).lower())]
 
     # Email updates only filter
     if only_email_updates:

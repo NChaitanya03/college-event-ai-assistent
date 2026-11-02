@@ -310,6 +310,32 @@ function renderEventCards(events) {
               <span class="text-[11px] bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">${ev.stall_info}</span>
             </div>
           ` : ''}
+
+          <!-- Event Perks: Fee, Certificate, Attendance, Prizes -->
+          ${(ev.fee || ev.certificate || ev.attendance || ev.prizes) ? `
+            <div class="flex items-center flex-wrap gap-1.5 pt-1.5 border-t border-slate-200/60 mt-1">
+              ${ev.fee ? `
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${ev.fee.toLowerCase().includes('free') ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-blue-50 text-blue-800 border-blue-200'}">
+                  🎟️ ${ev.fee}
+                </span>
+              ` : ''}
+              ${ev.certificate ? `
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-200">
+                  📜 ${ev.certificate}
+                </span>
+              ` : ''}
+              ${ev.attendance ? `
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200">
+                  📝 Attendance
+                </span>
+              ` : ''}
+              ${ev.prizes ? `
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-yellow-50 text-yellow-800 border border-yellow-300">
+                  🏆 ${ev.prizes}
+                </span>
+              ` : ''}
+            </div>
+          ` : ''}
         </div>
       </div>
 
@@ -687,6 +713,11 @@ function openEventModal(eventId) {
   const contacts = ev.contact_numbers || (emailData && emailData.contact_numbers) || [];
   const highlights = ev.highlights || (emailData && emailData.highlights) || [];
   const stallInfo = ev.stall_info || (emailData && emailData.stall_info);
+  const fee = ev.fee || (emailData && emailData.fee);
+  const certificate = ev.certificate || (emailData && emailData.certificate);
+  const attendance = ev.attendance || (emailData && emailData.attendance);
+  const prizes = ev.prizes || (emailData && emailData.prizes);
+  const mode = ev.mode || (emailData && emailData.mode);
 
   content.innerHTML = `
     <!-- Modal Header -->
@@ -747,14 +778,42 @@ function openEventModal(eventId) {
     </div>
 
     <!-- Additional Extracted Metadata Badges -->
-    ${(regLink || whatsappLink || deadline || eligibility || stallInfo || contacts.length > 0) ? `
+    ${(regLink || whatsappLink || deadline || eligibility || stallInfo || contacts.length > 0 || fee || certificate || attendance || prizes) ? `
       <div class="p-3.5 bg-blue-50/50 rounded-xl border border-blue-200/80 text-xs mb-4 space-y-2">
         <div class="font-bold text-blue-900 flex items-center space-x-1.5">
           <i class="fa-solid fa-circle-info text-blue-600"></i>
-          <span>Event Highlights & Participation Info:</span>
+          <span>Event Highlights, Certification & Participation Info:</span>
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] pt-1">
+          ${certificate ? `
+            <div class="bg-white p-2 rounded-lg border border-amber-200">
+              <strong class="text-amber-800 block">📜 Certification:</strong>
+              <span class="text-slate-700">${certificate}</span>
+            </div>
+          ` : ''}
+
+          ${fee ? `
+            <div class="bg-white p-2 rounded-lg border border-blue-100">
+              <strong class="text-emerald-800 block">🎟️ Entry / Registration Fee:</strong>
+              <span class="text-slate-700 font-bold">${fee}</span>
+            </div>
+          ` : ''}
+
+          ${attendance ? `
+            <div class="bg-white p-2 rounded-lg border border-indigo-100">
+              <strong class="text-indigo-800 block">📝 Attendance Credit:</strong>
+              <span class="text-slate-700">${attendance}</span>
+            </div>
+          ` : ''}
+
+          ${prizes ? `
+            <div class="bg-white p-2 rounded-lg border border-yellow-200">
+              <strong class="text-yellow-800 block">🏆 Prizes & Awards:</strong>
+              <span class="text-slate-700">${prizes}</span>
+            </div>
+          ` : ''}
+
           ${deadline ? `
             <div class="bg-white p-2 rounded-lg border border-blue-100">
               <strong class="text-rose-700 block">⏰ Registration Deadline:</strong>
