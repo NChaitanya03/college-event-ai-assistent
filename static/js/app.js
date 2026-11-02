@@ -38,10 +38,17 @@ function startAutoSyncCountdown() {
       nextSyncRemainingSeconds--;
       updateAutoSyncDisplay();
     } else {
-      // Countdown reached 0: server auto-sync ran, re-fetch status & events
+      // Countdown reached 0: trigger sync and refresh data
       nextSyncRemainingSeconds = 1800;
-      fetchAppStatus();
-      loadEvents();
+      fetch('/api/cron_sync')
+        .then(() => {
+          fetchAppStatus();
+          loadEvents();
+        })
+        .catch(() => {
+          fetchAppStatus();
+          loadEvents();
+        });
     }
   }, 1000);
 }

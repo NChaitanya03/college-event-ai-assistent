@@ -271,6 +271,20 @@ def get_email_notices():
         "emails": STATE["analyzed_emails"]
     }
 
+@app.get("/api/cron_sync")
+def cron_sync():
+    """Endpoint triggered by Vercel Cron jobs or external cron services to auto-sync every 30 minutes."""
+    try:
+        refresh_state(fetch_new_emails=True, max_email_count=35)
+        return {
+            "status": "success",
+            "message": "Cron auto-sync completed successfully",
+            "last_synced": STATE["last_synced"],
+            "active_events": len(STATE["active_events"])
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 @app.post("/api/sync_emails")
 def sync_emails(max_count: int = Query(35)):
     """Triggers live synchronization with Gmail API and refreshes token."""

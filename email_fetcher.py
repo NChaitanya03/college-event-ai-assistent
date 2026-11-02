@@ -1,4 +1,5 @@
 import os
+import json
 import base64
 import re
 from datetime import datetime
@@ -12,34 +13,68 @@ from googleapiclient.errors import HttpError
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 
 def get_gmail_service():
-    """Authenticates the user and returns the Gmail API service instance."""
+    """
+    Authenticates the user and returns the Gmail API service instance.
+    Supports local files (token.json, credentials.json) as well as
+    cloud environment variables (GMAIL_TOKEN_JSON, GMAIL_CREDENTIALS_JSON) for Vercel.
+    """
     creds = None
-    if os.path.exists('token.json'):
+
+    # 1. Try loading token from Environment Variable (Vercel deployment)
+    env_token = os.environ.get('GMAIL_TOKEN_JSON')
+    if env_token:
+        try:
+            token_dict = json.loads(env_token)
+            creds = Credentials.from_authorized_user_info(token_dict, SCOPES)
+            print("Loaded credentials from GMAIL_TOKEN_JSON environment variable.")
+        except Exception as e:
+            print(f"Error parsing GMAIL_TOKEN_JSON env: {e}")
+
+    # 2. Try loading token from local file (Local development)
+    if not creds and os.path.exists('token.json'):
         try:
             creds = Credentials.from_authorized_user_file('token.json', SCOPES)
         except Exception as e:
             print(f"Error loading token.json: {e}")
 
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
+    # 3. Refresh token if expired
+    if creds and creds.expired and creds.refresh_token:
+        try:
+            print("Refreshing expired access token...")
+            creds.refresh(Request())
+            # Save to disk if writable (local dev)
             try:
-                print("Refreshing access token...")
-                creds.refresh(Request())
                 with open('token.json', 'w', encoding='utf-8') as token_file:
                     token_file.write(creds.to_json())
+            except Exception:
+                pass  # Read-only serverless filesystem
+        except Exception as e:
+            print(f"Failed to refresh token: {e}")
+            creds = None
+
+    # 4. If still no valid credentials, run OAuth flow (local dev only)
+    if not creds:
+        env_creds = os.environ.get('GMAIL_CREDENTIALS_JSON')
+        if env_creds:
+            try:
+                creds_dict = json.loads(env_creds)
+                flow = InstalledAppFlow.from_client_config(creds_dict, SCOPES)
+                creds = flow.run_local_server(port=0)
             except Exception as e:
-                print(f"Failed to refresh token: {e}")
-                creds = None
-        
+                print(f"Error with GMAIL_CREDENTIALS_JSON: {e}")
+
         if not creds and os.path.exists('credentials.json'):
-            print("Initiating OAuth flow...")
+            print("Initiating local OAuth flow...")
             flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
             creds = flow.run_local_server(port=0)
-            with open('token.json', 'w', encoding='utf-8') as token_file:
-                token_file.write(creds.to_json())
+            try:
+                with open('token.json', 'w', encoding='utf-8') as token_file:
+                    token_file.write(creds.to_json())
+            except Exception:
+                pass
 
     if not creds:
-        raise ValueError("No valid credentials found. Please run authentication.")
+        raise ValueError("No valid credentials found. Please set GMAIL_TOKEN_JSON or provide credentials.json.")
 
     return build('gmail', 'v1', credentials=creds)
 
@@ -113,7 +148,6 @@ def fetch_recent_emails(max_results=25, query=None):
                 headers = {h.get('name', '').lower(): h.get('value', '') for h in headers_list}
 
                 from_header = headers.get('from', '')
-                # Parse sender name and email address
                 sender_name = from_header
                 sender_email = from_header
                 if '<' in from_header and '>' in from_header:
@@ -153,8 +187,3 @@ def fetch_recent_emails(max_results=25, query=None):
 if __name__ == '__main__':
     profile = get_user_profile()
     print("User profile:", profile)
-    emails = fetch_recent_emails(max_results=5)
-    print(f"Fetched {len(emails)} emails.")
-    for em in emails:
-        print(f"- [{em['date_header']}] {em['subject']} (From: {em['sender']})")
-
