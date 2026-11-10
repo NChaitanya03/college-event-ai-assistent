@@ -165,8 +165,8 @@ async function loadEvents() {
 
   const params = new URLSearchParams();
 
-  // Handle Saved Filter separately if active
-  if (currentQuickFilter === 'saved') {
+  // Handle Saved Filter separately if active or on Saved Events Tab
+  if (currentTab === 'saved-events' || currentQuickFilter === 'saved') {
     params.set('status_filter', 'all');
   } else if (currentTab === 'expired-events') {
     params.set('status_filter', 'expired');
@@ -199,8 +199,8 @@ async function loadEvents() {
     
     let events = data.events || [];
 
-    // If 'saved' quick filter is clicked, filter by savedEventIds
-    if (currentQuickFilter === 'saved') {
+    // If 'saved-events' tab or 'saved' quick filter is active, filter by savedEventIds
+    if (currentTab === 'saved-events' || currentQuickFilter === 'saved') {
       events = events.filter(e => savedEventIds.includes(e.id));
     }
 
@@ -221,18 +221,22 @@ async function loadEvents() {
       const recBadge = document.getElementById('tabBadge-recommended');
       if (recBadge) recBadge.textContent = events.length;
     }
+    if (currentTab === 'saved-events') {
+      const savedTabBadge = document.getElementById('tabBadge-saved-events');
+      if (savedTabBadge) savedTabBadge.textContent = events.length;
+    }
 
     if (!events || events.length === 0) {
       grid.innerHTML = '';
       empty.classList.remove('hidden');
       const titleElem = document.getElementById('emptyStateTitle');
       const descElem = document.getElementById('emptyStateDesc');
-      if (currentTab === 'expired-events') {
+      if (currentTab === 'saved-events' || currentQuickFilter === 'saved') {
+        titleElem.textContent = "You haven't bookmarked any events yet ⭐";
+        descElem.textContent = "Click the star icon on any event card to save it here for quick access.";
+      } else if (currentTab === 'expired-events') {
         titleElem.textContent = "No past / expired events found";
         descElem.textContent = "All matching records are active or upcoming.";
-      } else if (currentQuickFilter === 'saved') {
-        titleElem.textContent = "You haven't bookmarked any events yet";
-        descElem.textContent = "Click the star icon on any event card to save it here.";
       } else {
         titleElem.textContent = "No events matched your search or filters";
         descElem.textContent = "Try clearing the search query or switching tabs.";
@@ -496,7 +500,7 @@ function switchTab(tabId) {
     quickFilters.classList.remove('hidden');
     nlpSection.classList.add('hidden');
 
-    if (tabId === 'expired-events') {
+    if (tabId === 'expired-events' || tabId === 'saved-events') {
       interestsSection.classList.add('hidden');
     } else {
       interestsSection.classList.remove('hidden');
@@ -541,6 +545,8 @@ function toggleBookmark(eventId) {
 function updateSavedBadge() {
   const badge = document.getElementById('savedCountBadge');
   if (badge) badge.textContent = savedEventIds.length;
+  const tabBadge = document.getElementById('tabBadge-saved-events');
+  if (tabBadge) tabBadge.textContent = savedEventIds.length;
 }
 
 // Share Event Details

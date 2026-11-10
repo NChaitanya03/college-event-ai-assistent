@@ -200,14 +200,21 @@
           <span id="tabBadge-calendar-all" class="ml-1 py-0.5 px-2 rounded-full text-[10px] bg-slate-100 text-slate-700 font-bold">--</span>
         </button>
 
-        <!-- Tab 4: Expired / Past Archive (NEW) -->
+        <!-- Tab 4: Saved Bookmarks -->
+        <button onclick="switchTab('saved-events')" id="tabBtn-saved-events" class="tab-btn border-b-2 border-transparent pb-3 px-1 text-sm font-semibold text-slate-500 hover:text-slate-700 flex items-center space-x-2 whitespace-nowrap">
+          <i class="fa-solid fa-star text-amber-500"></i>
+          <span>Saved Events</span>
+          <span id="tabBadge-saved-events" class="ml-1 py-0.5 px-2 rounded-full text-[10px] bg-amber-100 text-amber-800 font-bold">0</span>
+        </button>
+
+        <!-- Tab 5: Expired / Past Archive (NEW) -->
         <button onclick="switchTab('expired-events')" id="tabBtn-expired-events" class="tab-btn border-b-2 border-transparent pb-3 px-1 text-sm font-semibold text-slate-500 hover:text-slate-700 flex items-center space-x-2 whitespace-nowrap">
           <i class="fa-solid fa-flag-checkered text-rose-500"></i>
           <span>Completed / Past Events</span>
           <span id="tabBadge-expired" class="ml-1 py-0.5 px-2 rounded-full text-[10px] bg-rose-100 text-rose-800 font-bold">{{ expired_count }}</span>
         </button>
 
-        <!-- Tab 5: NLP Inspector -->
+        <!-- Tab 6: NLP Inspector -->
         <button onclick="switchTab('nlp-inspector')" id="tabBtn-nlp-inspector" class="tab-btn border-b-2 border-transparent pb-3 px-1 text-sm font-semibold text-slate-500 hover:text-slate-700 flex items-center space-x-2 whitespace-nowrap">
           <i class="fa-solid fa-microchip text-indigo-500"></i>
           <span>NLP Email Inspector</span>
